@@ -1,0 +1,59 @@
+{
+  "brand": "MIDNIGHT FREQUENCY ARCHIVE",
+  "issue": "#001",
+  "headline": "Songs for Rainy Window Nights",
+  "introSubtitle": "MIDNIGHT FREQUENCY ARCHIVE",
+  "outro": {
+    "kicker": "MIDNIGHT FREQUENCY ARCHIVE",
+    "title": "Save this for your next rainy window night.",
+    "subtitle": "MIDNIGHT FREQUENCY ARCHIVE #001"
+  },
+  "outputName": "midnight-frequency-archive-mobile-001",
+  "background": "assets/bg.jpg",
+  "timing": {
+    "intro": 2,
+    "album": 10,
+    "outro": 2
+  },
+  "record": {
+    "secondsPerRotation": 16
+  },
+  "tracks": [
+    {
+      "number": "01",
+      "title": "I Can't Read Your Mind",
+      "artist": "MELOH",
+      "image": "assets/album/1.png"
+    },
+    {
+      "number": "02",
+      "title": "Fall",
+      "artist": "ASH ISLAND",
+      "image": "assets/album/2.png"
+    },
+    {
+      "number": "03",
+      "title": "Winter",
+      "artist": "PAUL BLANCO",
+      "image": "assets/album/3.png"
+    },
+    {
+      "number": "04",
+      "title": "LOVE",
+      "artist": "Leellamarz",
+      "image": "assets/album/4.png"
+    },
+    {
+      "number": "05",
+      "title": "Macheon",
+      "artist": "Young B",
+      "image": "assets/album/5.png"
+    },
+    {
+      "number": "06",
+      "title": "rain bird",
+      "artist": "CODE KUNST feat. Tablo, Colde",
+      "image": "assets/album/6.png"
+    }
+  ]
+}

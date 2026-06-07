@@ -1,0 +1,735 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>MIDNIGHT FREQUENCY ARCHIVE Mobile Editor</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      --bg: #071019;
+      --panel: #101820;
+      --panel-2: #17212a;
+      --line: rgba(236, 244, 250, 0.14);
+      --fg: rgba(246, 250, 253, 0.94);
+      --muted: rgba(220, 232, 242, 0.66);
+      --dim: rgba(205, 218, 228, 0.48);
+      --accent: #bcd3e8;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--fg);
+      font-family: Inter, "Segoe UI", Arial, sans-serif;
+    }
+
+    button,
+    input,
+    textarea {
+      font: inherit;
+    }
+
+    .app {
+      min-height: 100dvh;
+      display: grid;
+      grid-template-rows: auto minmax(0, 1fr);
+    }
+
+    header {
+      position: sticky;
+      top: 0;
+      z-index: 5;
+      padding: max(14px, env(safe-area-inset-top)) 16px 12px;
+      background: rgba(7, 16, 25, 0.9);
+      border-bottom: 1px solid var(--line);
+      backdrop-filter: blur(14px);
+    }
+
+    .brand {
+      margin: 0;
+      font-size: 12px;
+      font-weight: 700;
+      letter-spacing: 0.16em;
+      color: var(--muted);
+      text-transform: uppercase;
+    }
+
+    .tabs {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 8px;
+      margin-top: 12px;
+    }
+
+    .tab {
+      height: 38px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: var(--panel);
+      color: var(--muted);
+      font-weight: 650;
+    }
+
+    .tab.is-active {
+      background: var(--accent);
+      color: #071019;
+      border-color: transparent;
+    }
+
+    main {
+      min-height: 0;
+      overflow: auto;
+      padding: 16px;
+    }
+
+    .view {
+      display: none;
+    }
+
+    .view.is-active {
+      display: block;
+    }
+
+    .preview-shell {
+      display: grid;
+      justify-items: center;
+      gap: 14px;
+    }
+
+    canvas {
+      width: min(100%, 360px);
+      aspect-ratio: 9 / 16;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: #02060a;
+      box-shadow: 0 18px 48px rgba(0, 0, 0, 0.36);
+    }
+
+    .scrubber {
+      width: min(100%, 360px);
+      display: grid;
+      grid-template-columns: 48px 1fr 48px;
+      gap: 10px;
+      align-items: center;
+      color: var(--muted);
+      font-size: 12px;
+    }
+
+    input[type="range"] {
+      width: 100%;
+      accent-color: var(--accent);
+    }
+
+    .section {
+      padding: 14px;
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      margin-bottom: 12px;
+    }
+
+    .section h2 {
+      margin: 0 0 12px;
+      color: var(--fg);
+      font-size: 15px;
+      line-height: 1.2;
+    }
+
+    label {
+      display: grid;
+      gap: 7px;
+      margin: 0 0 12px;
+      color: var(--muted);
+      font-size: 12px;
+      font-weight: 650;
+    }
+
+    input[type="text"],
+    input[type="number"],
+    textarea {
+      width: 100%;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: var(--panel-2);
+      color: var(--fg);
+      padding: 10px 11px;
+      outline: none;
+    }
+
+    textarea {
+      min-height: 76px;
+      resize: vertical;
+    }
+
+    input[type="file"] {
+      width: 100%;
+      color: var(--muted);
+    }
+
+    .track-grid {
+      display: grid;
+      gap: 12px;
+    }
+
+    .track {
+      padding: 12px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: rgba(255, 255, 255, 0.03);
+    }
+
+    .track-title {
+      margin: 0 0 12px;
+      color: var(--dim);
+      font-size: 12px;
+      font-weight: 750;
+      letter-spacing: 0.14em;
+    }
+
+    .actions {
+      position: sticky;
+      bottom: 0;
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 10px;
+      padding: 12px 0 max(12px, env(safe-area-inset-bottom));
+      background: linear-gradient(180deg, rgba(7, 16, 25, 0), #071019 24%);
+    }
+
+    .actions.single {
+      grid-template-columns: 1fr;
+    }
+
+    .button {
+      min-height: 44px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: var(--panel-2);
+      color: var(--fg);
+      font-weight: 750;
+    }
+
+    .button.primary {
+      background: var(--accent);
+      color: #071019;
+      border-color: transparent;
+    }
+
+    .button:disabled {
+      opacity: 0.55;
+    }
+
+    .status {
+      margin: 10px 0 0;
+      color: var(--muted);
+      font-size: 12px;
+      line-height: 1.45;
+    }
+  </style>
+</head>
+<body>
+  <div class="app">
+    <header>
+      <p class="brand">MIDNIGHT FREQUENCY ARCHIVE</p>
+      <div class="tabs">
+        <button class="tab is-active" data-view="preview">Preview</button>
+        <button class="tab" data-view="edit">Edit</button>
+        <button class="tab" data-view="render">Render</button>
+      </div>
+    </header>
+
+    <main>
+      <section id="preview" class="view is-active">
+        <div class="preview-shell">
+          <canvas id="previewCanvas" width="720" height="1280"></canvas>
+          <div class="scrubber">
+            <span id="timeNow">0.0s</span>
+            <input id="timeRange" type="range" min="0" max="64" step="0.05" value="0">
+            <span id="timeTotal">64.0s</span>
+          </div>
+          <button id="playButton" class="button primary">Play Preview</button>
+        </div>
+      </section>
+
+      <section id="edit" class="view">
+        <div class="section">
+          <h2>Text</h2>
+          <label>Brand
+            <input id="brandInput" type="text">
+          </label>
+          <label>Issue
+            <input id="issueInput" type="text">
+          </label>
+          <label>Intro headline
+            <textarea id="headlineInput"></textarea>
+          </label>
+          <label>Intro subtitle
+            <input id="introSubtitleInput" type="text">
+          </label>
+          <label>Outro text
+            <textarea id="outroTitleInput"></textarea>
+          </label>
+        </div>
+
+        <div class="section">
+          <h2>Assets</h2>
+          <label>Background
+            <input id="backgroundInput" type="file" accept="image/*">
+          </label>
+        </div>
+
+        <div class="section">
+          <h2>Tracks</h2>
+          <div id="tracksForm" class="track-grid"></div>
+        </div>
+
+        <div class="section">
+          <h2>Timing</h2>
+          <label>Intro seconds
+            <input id="introSecondsInput" type="number" min="1" step="0.5">
+          </label>
+          <label>Album seconds
+            <input id="albumSecondsInput" type="number" min="3" step="0.5">
+          </label>
+          <label>Outro seconds
+            <input id="outroSecondsInput" type="number" min="1" step="0.5">
+          </label>
+        </div>
+
+        <div class="actions">
+          <button id="saveButton" class="button">Save Edits</button>
+          <button id="resetButton" class="button">Reset</button>
+        </div>
+      </section>
+
+      <section id="render" class="view">
+        <div class="section">
+          <h2>Render Video</h2>
+          <label>Output file name
+            <input id="outputNameInput" type="text">
+          </label>
+          <p id="renderStatus" class="status">MP4 support depends on the browser. Chrome usually works; if not, the app will save WebM.</p>
+        </div>
+
+        <div class="actions single">
+          <button id="renderButton" class="button primary">Render MP4</button>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <script>
+    const defaultConfig = {
+      brand: "MIDNIGHT FREQUENCY ARCHIVE",
+      issue: "#001",
+      headline: "Songs for Rainy Window Nights",
+      introSubtitle: "MIDNIGHT FREQUENCY ARCHIVE",
+      outro: {
+        kicker: "MIDNIGHT FREQUENCY ARCHIVE",
+        title: "Save this for your next rainy window night.",
+        subtitle: "MIDNIGHT FREQUENCY ARCHIVE #001"
+      },
+      outputName: "midnight-frequency-archive-mobile-001",
+      background: "assets/bg.jpg",
+      timing: { intro: 2, album: 10, outro: 2 },
+      record: { secondsPerRotation: 16 },
+      tracks: [
+        { number: "01", title: "I Can't Read Your Mind", artist: "MELOH", image: "assets/album/1.png" },
+        { number: "02", title: "Fall", artist: "ASH ISLAND", image: "assets/album/2.png" },
+        { number: "03", title: "Winter", artist: "PAUL BLANCO", image: "assets/album/3.png" },
+        { number: "04", title: "LOVE", artist: "Leellamarz", image: "assets/album/4.png" },
+        { number: "05", title: "Macheon", artist: "Young B", image: "assets/album/5.png" },
+        { number: "06", title: "rain bird", artist: "CODE KUNST feat. Tablo, Colde", image: "assets/album/6.png" }
+      ]
+    };
+
+    const storageKey = "midnight-frequency-archive-mobile";
+    const canvas = document.querySelector("#previewCanvas");
+    const ctx = canvas.getContext("2d");
+    const imageCache = new Map();
+    let config = loadState();
+    let scenes = buildScenes(config).scenes;
+    let duration = buildScenes(config).duration;
+    let playing = false;
+    let playStarted = 0;
+    let playOffset = 0;
+
+    function clone(value) {
+      return JSON.parse(JSON.stringify(value));
+    }
+
+    function loadState() {
+      try {
+        return JSON.parse(localStorage.getItem(storageKey)) || clone(defaultConfig);
+      } catch {
+        return clone(defaultConfig);
+      }
+    }
+
+    function saveState() {
+      localStorage.setItem(storageKey, JSON.stringify(config));
+    }
+
+    function buildScenes(cfg) {
+      const intro = Number(cfg.timing.intro) || 2;
+      const album = Number(cfg.timing.album) || 10;
+      const outro = Number(cfg.timing.outro) || 2;
+      let cursor = 0;
+      const built = [{
+        start: cursor,
+        end: cursor + intro,
+        type: "intro",
+        kicker: cfg.issue,
+        title: cfg.headline,
+        subtitle: cfg.introSubtitle || cfg.brand
+      }];
+      cursor += intro;
+      cfg.tracks.forEach((track, imageIndex) => {
+        built.push({ ...track, imageIndex, start: cursor, end: cursor + album, type: "album" });
+        cursor += album;
+      });
+      built.push({
+        start: cursor,
+        end: cursor + outro,
+        type: "outro",
+        kicker: cfg.outro.kicker,
+        title: cfg.outro.title,
+        subtitle: cfg.outro.subtitle
+      });
+      return { scenes: built, duration: cursor + outro };
+    }
+
+    function rebuild() {
+      const built = buildScenes(config);
+      scenes = built.scenes;
+      duration = built.duration;
+      document.querySelector("#timeRange").max = String(duration);
+      document.querySelector("#timeTotal").textContent = `${duration.toFixed(1)}s`;
+      drawFrame(Number(document.querySelector("#timeRange").value) || 0);
+    }
+
+    function loadImage(src) {
+      if (imageCache.has(src)) return imageCache.get(src);
+      const promise = new Promise((resolve, reject) => {
+        const image = new Image();
+        image.onload = () => resolve(image);
+        image.onerror = reject;
+        image.src = src;
+      });
+      imageCache.set(src, promise);
+      return promise;
+    }
+
+    function drawCover(image) {
+      const scale = Math.max(canvas.width / image.width, canvas.height / image.height);
+      const w = image.width * scale;
+      const h = image.height * scale;
+      ctx.drawImage(image, (canvas.width - w) / 2, (canvas.height - h) / 2, w, h);
+    }
+
+    function drawWrappedText(text, x, y, maxWidth, lineHeight) {
+      const words = text.split(" ");
+      const lines = [];
+      let line = "";
+      for (const word of words) {
+        const test = line ? `${line} ${word}` : word;
+        if (ctx.measureText(test).width > maxWidth && line) {
+          lines.push(line);
+          line = word;
+        } else {
+          line = test;
+        }
+      }
+      lines.push(line);
+      lines.forEach((item, index) => ctx.fillText(item, x, y + index * lineHeight));
+      return y + lines.length * lineHeight;
+    }
+
+    async function drawFrame(time) {
+      const scene = scenes.find((item) => time >= item.start && time < item.end) || scenes[scenes.length - 1];
+      const alpha = fadeFor(scene, time);
+      const yOffset = (1 - alpha) * 18;
+      const bg = await loadImage(config.background);
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      drawCover(bg);
+
+      let gradient = ctx.createLinearGradient(0, 0, 0, canvas.height);
+      gradient.addColorStop(0, "rgba(4,10,16,0.02)");
+      gradient.addColorStop(0.64, "rgba(3,8,13,0.54)");
+      gradient.addColorStop(1, "rgba(1,5,9,0.88)");
+      ctx.fillStyle = gradient;
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+      gradient = ctx.createLinearGradient(0, 0, canvas.width, 0);
+      gradient.addColorStop(0, "rgba(1,4,8,0.34)");
+      gradient.addColorStop(0.42, "rgba(1,4,8,0.03)");
+      gradient.addColorStop(1, "rgba(1,4,8,0.25)");
+      ctx.fillStyle = gradient;
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+      drawFooter(time);
+      if (scene.type === "album") {
+        const record = await loadImage(scene.image);
+        drawRecord(record, time - scene.start, alpha);
+      }
+      drawSceneText(scene, alpha, yOffset);
+    }
+
+    function fadeFor(scene, time) {
+      const ease = (x) => 1 - Math.pow(1 - x, 3);
+      const clamp = (value, min, max) => Math.min(Math.max(value, min), max);
+      const local = time - scene.start;
+      const remaining = scene.end - time;
+      return clamp(Math.min(ease(local / 0.8), ease(remaining / 0.55)), 0, 1);
+    }
+
+    function drawFooter(time) {
+      ctx.save();
+      ctx.globalAlpha = 0.58;
+      ctx.fillStyle = "rgb(232,240,247)";
+      ctx.font = "600 13px Segoe UI, Arial, sans-serif";
+      ctx.fillText(config.brand, 48, 88);
+      ctx.fillStyle = "rgba(232,240,247,0.18)";
+      ctx.fillRect(586, 83, 86, 1);
+      ctx.fillStyle = "rgba(244,248,252,0.76)";
+      ctx.fillRect(586, 83, 86 * (time / duration), 1);
+      ctx.restore();
+    }
+
+    function drawRecord(image, localTime, alpha) {
+      const size = 520;
+      const secondsPerRotation = config.record.secondsPerRotation || 16;
+      const angle = localTime * (Math.PI * 2 / secondsPerRotation);
+      ctx.save();
+      ctx.globalAlpha = alpha;
+      ctx.translate(canvas.width / 2, canvas.height / 2);
+      ctx.rotate(angle);
+      ctx.drawImage(image, -size / 2, -size / 2, size, size);
+      ctx.restore();
+    }
+
+    function drawSceneText(scene, alpha, yOffset) {
+      const x = 48;
+      const bottom = 1180;
+      ctx.save();
+      ctx.globalAlpha = alpha;
+      ctx.translate(0, yOffset);
+      if (scene.type === "album") {
+        ctx.fillStyle = "rgba(205,218,228,0.46)";
+        ctx.font = "600 19px Segoe UI, Arial, sans-serif";
+        ctx.fillText(scene.number, x, bottom - 190);
+        ctx.fillStyle = "rgba(244,248,252,0.94)";
+        ctx.font = "650 62px Segoe UI, Arial, sans-serif";
+        const afterTitle = drawWrappedText(scene.title, x, bottom - 128, 600, 64);
+        ctx.fillStyle = "rgba(222,232,240,0.68)";
+        ctx.font = "430 25px Segoe UI, Arial, sans-serif";
+        drawWrappedText(scene.artist, x, afterTitle + 26, 600, 34);
+      } else {
+        ctx.fillStyle = "rgba(205,218,228,0.46)";
+        ctx.font = "600 14px Segoe UI, Arial, sans-serif";
+        ctx.fillText(scene.kicker.toUpperCase(), x, bottom - 238);
+        ctx.fillStyle = "rgba(244,248,252,0.94)";
+        ctx.font = "650 58px Segoe UI, Arial, sans-serif";
+        const afterTitle = drawWrappedText(scene.title, x, bottom - 184, 590, 62);
+        ctx.fillStyle = "rgba(222,232,240,0.68)";
+        ctx.font = "420 24px Segoe UI, Arial, sans-serif";
+        drawWrappedText(scene.subtitle, x, afterTitle + 24, 560, 34);
+      }
+      ctx.restore();
+    }
+
+    function bindTabs() {
+      document.querySelectorAll(".tab").forEach((tab) => {
+        tab.addEventListener("click", () => {
+          document.querySelectorAll(".tab").forEach((item) => item.classList.remove("is-active"));
+          document.querySelectorAll(".view").forEach((item) => item.classList.remove("is-active"));
+          tab.classList.add("is-active");
+          document.querySelector(`#${tab.dataset.view}`).classList.add("is-active");
+        });
+      });
+    }
+
+    function bindForm() {
+      brandInput.value = config.brand;
+      issueInput.value = config.issue;
+      headlineInput.value = config.headline;
+      introSubtitleInput.value = config.introSubtitle;
+      outroTitleInput.value = config.outro.title;
+      outputNameInput.value = config.outputName;
+      introSecondsInput.value = config.timing.intro;
+      albumSecondsInput.value = config.timing.album;
+      outroSecondsInput.value = config.timing.outro;
+
+      tracksForm.innerHTML = config.tracks.map((track, index) => `
+        <div class="track">
+          <p class="track-title">TRACK ${track.number}</p>
+          <label>Title
+            <input data-track="${index}" data-field="title" type="text" value="${escapeAttr(track.title)}">
+          </label>
+          <label>Artist
+            <input data-track="${index}" data-field="artist" type="text" value="${escapeAttr(track.artist)}">
+          </label>
+          <label>Album image
+            <input data-track="${index}" data-field="image" type="file" accept="image/*">
+          </label>
+        </div>
+      `).join("");
+
+      document.querySelectorAll("[data-track][data-field='title'], [data-track][data-field='artist']").forEach((input) => {
+        input.addEventListener("input", () => {
+          config.tracks[Number(input.dataset.track)][input.dataset.field] = input.value;
+          scheduleUpdate();
+        });
+      });
+      document.querySelectorAll("[data-track][data-field='image']").forEach((input) => {
+        input.addEventListener("change", async () => {
+          const file = input.files[0];
+          if (!file) return;
+          config.tracks[Number(input.dataset.track)].image = await readFile(file);
+          imageCache.clear();
+          scheduleUpdate();
+        });
+      });
+
+      backgroundInput.addEventListener("change", async () => {
+        const file = backgroundInput.files[0];
+        if (!file) return;
+        config.background = await readFile(file);
+        imageCache.clear();
+        scheduleUpdate();
+      });
+
+      [brandInput, issueInput, headlineInput, introSubtitleInput, outroTitleInput, outputNameInput, introSecondsInput, albumSecondsInput, outroSecondsInput].forEach((input) => {
+        input.addEventListener("input", () => {
+          config.brand = brandInput.value;
+          config.issue = issueInput.value;
+          config.headline = headlineInput.value;
+          config.introSubtitle = introSubtitleInput.value;
+          config.outro.kicker = brandInput.value;
+          config.outro.title = outroTitleInput.value;
+          config.outro.subtitle = `${brandInput.value} ${issueInput.value}`;
+          config.outputName = outputNameInput.value;
+          config.timing.intro = Number(introSecondsInput.value) || 2;
+          config.timing.album = Number(albumSecondsInput.value) || 10;
+          config.timing.outro = Number(outroSecondsInput.value) || 2;
+          scheduleUpdate();
+        });
+      });
+    }
+
+    function escapeAttr(value) {
+      return value.replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/</g, "&lt;");
+    }
+
+    function readFile(file) {
+      return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(reader.result);
+        reader.onerror = reject;
+        reader.readAsDataURL(file);
+      });
+    }
+
+    let updateTimer = 0;
+    function scheduleUpdate() {
+      clearTimeout(updateTimer);
+      updateTimer = setTimeout(() => {
+        rebuild();
+        saveState();
+      }, 150);
+    }
+
+    async function renderVideo() {
+      renderButton.disabled = true;
+      renderStatus.textContent = "Rendering... Keep this tab open.";
+      const mimeType = MediaRecorder.isTypeSupported("video/mp4;codecs=avc1.42E01E")
+        ? "video/mp4;codecs=avc1.42E01E"
+        : "video/webm;codecs=vp9";
+      const extension = mimeType.startsWith("video/mp4") ? "mp4" : "webm";
+      const stream = canvas.captureStream(30);
+      const recorder = new MediaRecorder(stream, { mimeType, videoBitsPerSecond: 3500000 });
+      const chunks = [];
+      recorder.ondataavailable = (event) => {
+        if (event.data && event.data.size) chunks.push(event.data);
+      };
+
+      await new Promise((resolve) => {
+        recorder.onstop = resolve;
+        recorder.start(1000);
+        const startedAt = performance.now();
+        async function next() {
+          const elapsed = (performance.now() - startedAt) / 1000;
+          await drawFrame(Math.min(elapsed, duration - 0.001));
+          if (elapsed < duration) requestAnimationFrame(next);
+          else recorder.stop();
+        }
+        next();
+      });
+
+      const blob = new Blob(chunks, { type: mimeType });
+      const link = document.createElement("a");
+      link.href = URL.createObjectURL(blob);
+      link.download = `${config.outputName || "midnight-frequency-archive"}.${extension}`;
+      link.click();
+      setTimeout(() => URL.revokeObjectURL(link.href), 2000);
+      renderStatus.textContent = `Done. Saved ${link.download}.`;
+      renderButton.disabled = false;
+    }
+
+    function bindPreview() {
+      timeRange.addEventListener("input", () => {
+        playing = false;
+        playButton.textContent = "Play Preview";
+        const value = Number(timeRange.value);
+        timeNow.textContent = `${value.toFixed(1)}s`;
+        drawFrame(value);
+      });
+      playButton.addEventListener("click", () => {
+        playing = !playing;
+        playButton.textContent = playing ? "Pause Preview" : "Play Preview";
+        playStarted = performance.now();
+        playOffset = Number(timeRange.value) || 0;
+        if (playing) requestAnimationFrame(playLoop);
+      });
+    }
+
+    async function playLoop() {
+      if (!playing) return;
+      const elapsed = (performance.now() - playStarted) / 1000;
+      const current = Math.min(playOffset + elapsed, duration);
+      timeRange.value = String(current);
+      timeNow.textContent = `${current.toFixed(1)}s`;
+      await drawFrame(current);
+      if (current >= duration) {
+        playing = false;
+        playButton.textContent = "Play Preview";
+        return;
+      }
+      requestAnimationFrame(playLoop);
+    }
+
+    saveButton.addEventListener("click", () => {
+      saveState();
+      renderStatus.textContent = "Saved edits on this browser.";
+    });
+    resetButton.addEventListener("click", () => {
+      config = clone(defaultConfig);
+      imageCache.clear();
+      saveState();
+      bindForm();
+      rebuild();
+    });
+    renderButton.addEventListener("click", renderVideo);
+
+    bindTabs();
+    bindForm();
+    bindPreview();
+    rebuild();
+  </script>
+</body>
+</html>
