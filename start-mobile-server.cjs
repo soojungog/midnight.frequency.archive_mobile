@@ -16,6 +16,52 @@ const types = {
 };
 
 const server = http.createServer((request, response) => {
+  if (request.method === "OPTIONS") {
+    response.writeHead(204, {
+      "Access-Control-Allow-Origin": "*",
+      "Access-Control-Allow-Methods": "GET,POST,OPTIONS",
+      "Access-Control-Allow-Headers": "Content-Type"
+    });
+    response.end();
+    return;
+  }
+
+  if (request.method === "POST" && request.url === "/save-config") {
+    const chunks = [];
+    let bodySize = 0;
+    request.on("data", (chunk) => {
+      chunks.push(chunk);
+      bodySize += chunk.length;
+      if (bodySize > 512 * 1024 * 1024) {
+        response.writeHead(413, { "Access-Control-Allow-Origin": "*" });
+        response.end("Payload too large");
+        request.destroy();
+      }
+    });
+    request.on("end", () => {
+      try {
+        const body = Buffer.concat(chunks).toString("utf8");
+        const config = JSON.parse(body);
+        if (!config || typeof config !== "object" || !Array.isArray(config.tracks) || !config.timing) {
+          throw new Error("Invalid config payload");
+        }
+        fs.writeFileSync(path.join(root, "config.json"), `${JSON.stringify(config, null, 2)}\n`, "utf8");
+        response.writeHead(200, {
+          "Content-Type": "application/json; charset=utf-8",
+          "Access-Control-Allow-Origin": "*"
+        });
+        response.end(JSON.stringify({ ok: true }));
+      } catch (error) {
+        response.writeHead(400, {
+          "Content-Type": "application/json; charset=utf-8",
+          "Access-Control-Allow-Origin": "*"
+        });
+        response.end(JSON.stringify({ ok: false, error: error.message }));
+      }
+    });
+    return;
+  }
+
   const url = new URL(request.url, `http://127.0.0.1:${port}`);
   const requested = decodeURIComponent(url.pathname === "/" ? "/index.html" : url.pathname);
   const filePath = path.resolve(root, `.${requested}`);

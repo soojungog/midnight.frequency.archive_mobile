@@ -61,7 +61,7 @@
 
     .tabs {
       display: grid;
-      grid-template-columns: repeat(3, 1fr);
+      grid-template-columns: repeat(4, 1fr);
       gap: 8px;
       margin-top: 12px;
     }
@@ -108,6 +108,17 @@
       border-radius: 8px;
       background: #02060a;
       box-shadow: 0 18px 48px rgba(0, 0, 0, 0.36);
+    }
+
+    .maker-canvas {
+      aspect-ratio: 1;
+      background:
+        linear-gradient(45deg, rgba(255, 255, 255, 0.08) 25%, transparent 25%),
+        linear-gradient(-45deg, rgba(255, 255, 255, 0.08) 25%, transparent 25%),
+        linear-gradient(45deg, transparent 75%, rgba(255, 255, 255, 0.08) 75%),
+        linear-gradient(-45deg, transparent 75%, rgba(255, 255, 255, 0.08) 75%);
+      background-position: 0 0, 0 10px, 10px -10px, -10px 0;
+      background-size: 20px 20px;
     }
 
     .scrubber {
@@ -239,6 +250,7 @@
       <div class="tabs">
         <button class="tab is-active" data-view="preview">Preview</button>
         <button class="tab" data-view="edit">Edit</button>
+        <button class="tab" data-view="maker">LP Maker</button>
         <button class="tab" data-view="render">Render</button>
       </div>
     </header>
@@ -307,17 +319,32 @@
         </div>
       </section>
 
+      <section id="maker" class="view">
+        <div class="section">
+          <h2>LP Maker</h2>
+          <label>Square album cover
+            <input id="lpCoverInput" type="file" accept="image/*">
+          </label>
+          <canvas id="lpMakerCanvas" class="maker-canvas" width="1200" height="1200"></canvas>
+          <p id="lpMakerStatus" class="status">Upload a 1:1 album cover, then download the finished record PNG.</p>
+        </div>
+
+        <div class="actions single">
+          <button id="lpDownloadButton" class="button primary" disabled>Download Record PNG</button>
+        </div>
+      </section>
+
       <section id="render" class="view">
         <div class="section">
           <h2>Render Video</h2>
           <label>Output file name
             <input id="outputNameInput" type="text">
           </label>
-          <p id="renderStatus" class="status">MP4 support depends on the browser. Chrome usually works; if not, the app will save WebM.</p>
+          <p id="renderStatus" class="status">Use the local renderer for MP4 export. Browser video export is disabled because it is unreliable on mobile.</p>
         </div>
 
         <div class="actions single">
-          <button id="renderButton" class="button primary">Render MP4</button>
+          <button id="renderButton" class="button primary">Show Render Command</button>
         </div>
       </section>
     </main>
@@ -337,7 +364,12 @@
       outputName: "midnight-frequency-archive-mobile-001",
       background: "assets/bg.jpg",
       timing: { intro: 2, album: 10, outro: 2 },
-      record: { secondsPerRotation: 16 },
+      record: {
+        secondsPerRotation: 16,
+        baseImage: "assets/lp1.png",
+        coverRadiusRatio: 0.31,
+        centerHoleRadiusRatio: 0
+      },
       tracks: [
         { number: "01", title: "I Can't Read Your Mind", artist: "MELOH", image: "assets/album/1.png" },
         { number: "02", title: "Fall", artist: "ASH ISLAND", image: "assets/album/2.png" },
@@ -351,8 +383,34 @@
     const storageKey = "midnight-frequency-archive-mobile";
     const canvas = document.querySelector("#previewCanvas");
     const ctx = canvas.getContext("2d");
+    const lpMakerCanvas = document.querySelector("#lpMakerCanvas");
+    const lpMakerCtx = lpMakerCanvas.getContext("2d");
+    const timeRange = document.querySelector("#timeRange");
+    const timeNow = document.querySelector("#timeNow");
+    const timeTotal = document.querySelector("#timeTotal");
+    const playButton = document.querySelector("#playButton");
+    const brandInput = document.querySelector("#brandInput");
+    const issueInput = document.querySelector("#issueInput");
+    const headlineInput = document.querySelector("#headlineInput");
+    const introSubtitleInput = document.querySelector("#introSubtitleInput");
+    const outroTitleInput = document.querySelector("#outroTitleInput");
+    const backgroundInput = document.querySelector("#backgroundInput");
+    const tracksForm = document.querySelector("#tracksForm");
+    const introSecondsInput = document.querySelector("#introSecondsInput");
+    const albumSecondsInput = document.querySelector("#albumSecondsInput");
+    const outroSecondsInput = document.querySelector("#outroSecondsInput");
+    const saveButton = document.querySelector("#saveButton");
+    const resetButton = document.querySelector("#resetButton");
+    const outputNameInput = document.querySelector("#outputNameInput");
+    const renderButton = document.querySelector("#renderButton");
+    const renderStatus = document.querySelector("#renderStatus");
+    const lpCoverInput = document.querySelector("#lpCoverInput");
+    const lpDownloadButton = document.querySelector("#lpDownloadButton");
+    const lpMakerStatus = document.querySelector("#lpMakerStatus");
     const imageCache = new Map();
-    let config = loadState();
+    const recordCompositeCache = new Map();
+    let lpMakerOutputName = "record-album";
+    let config = clone(defaultConfig);
     let scenes = buildScenes(config).scenes;
     let duration = buildScenes(config).duration;
     let playing = false;
@@ -365,14 +423,72 @@
 
     function loadState() {
       try {
-        return JSON.parse(localStorage.getItem(storageKey)) || clone(defaultConfig);
+        return normalizeConfig(JSON.parse(localStorage.getItem(storageKey)) || clone(defaultConfig));
       } catch {
         return clone(defaultConfig);
       }
     }
 
+    async function loadProjectConfig() {
+      try {
+        const response = await fetch(`config.json?v=${Date.now()}`, { cache: "no-store" });
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        return normalizeConfig(await response.json());
+      } catch (error) {
+        console.warn("Could not load config.json. Falling back to browser storage.", error);
+        return loadState();
+      }
+    }
+
+    function normalizeConfig(value) {
+      const next = { ...clone(defaultConfig), ...value };
+      next.timing = { ...defaultConfig.timing, ...(value?.timing || {}) };
+      next.record = { ...defaultConfig.record, ...(value?.record || {}) };
+      next.record.centerHoleRadiusRatio = 0;
+      next.outro = { ...defaultConfig.outro, ...(value?.outro || {}) };
+      next.tracks = (value?.tracks?.length ? value.tracks : defaultConfig.tracks).map((track, index) => ({
+        ...defaultConfig.tracks[index],
+        ...track
+      }));
+      return next;
+    }
+
     function saveState() {
-      localStorage.setItem(storageKey, JSON.stringify(config));
+      try {
+        localStorage.setItem(storageKey, JSON.stringify(config));
+        return true;
+      } catch (error) {
+        console.warn("Browser storage save skipped.", error);
+        return false;
+      }
+    }
+
+    async function saveProjectConfig() {
+      const body = JSON.stringify(config);
+      const endpoints = [];
+      if (location.protocol === "http:" || location.protocol === "https:") {
+        endpoints.push(`${location.origin}/save-config`);
+      }
+      endpoints.push("http://127.0.0.1:4177/save-config");
+
+      let lastError = null;
+      for (const endpoint of [...new Set(endpoints)]) {
+        try {
+          const response = await fetch(endpoint, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body
+          });
+          if (!response.ok) {
+            const message = await response.text();
+            throw new Error(message || `HTTP ${response.status}`);
+          }
+          return;
+        } catch (error) {
+          lastError = error;
+        }
+      }
+      throw lastError || new Error("Could not reach local save server.");
     }
 
     function buildScenes(cfg) {
@@ -450,6 +566,31 @@
       return y + lines.length * lineHeight;
     }
 
+    function drawFittedTitle(text, x, y, maxWidth) {
+      const manualLines = String(text).split(/\\n|\n/);
+      if (manualLines.length > 1) {
+        let currentY = y;
+        manualLines.forEach((line, index) => {
+          const indent = index === 0 ? 0 : 18;
+          const lineX = x + indent;
+          currentY = drawFittedTitle(line.trimStart().trimEnd(), lineX, currentY, maxWidth - indent) + 8;
+        });
+        return currentY - 8;
+      }
+
+      let size = 62;
+      while (size > 42) {
+        ctx.font = `650 ${size}px Segoe UI, Arial, sans-serif`;
+        if (ctx.measureText(text).width <= maxWidth) break;
+        size -= 2;
+      }
+      if (ctx.measureText(text).width <= maxWidth) {
+        ctx.fillText(text, x, y);
+        return y + size;
+      }
+      return drawWrappedText(text, x, y, maxWidth, 56);
+    }
+
     async function drawFrame(time) {
       const scene = scenes.find((item) => time >= item.start && time < item.end) || scenes[scenes.length - 1];
       const alpha = fadeFor(scene, time);
@@ -494,28 +635,194 @@
       ctx.fillStyle = "rgb(232,240,247)";
       ctx.font = "600 13px Segoe UI, Arial, sans-serif";
       ctx.fillText(config.brand, 48, 88);
-      ctx.fillStyle = "rgba(232,240,247,0.18)";
-      ctx.fillRect(586, 83, 86, 1);
-      ctx.fillStyle = "rgba(244,248,252,0.76)";
-      ctx.fillRect(586, 83, 86 * (time / duration), 1);
       ctx.restore();
     }
 
-    function drawRecord(image, localTime, alpha) {
+    function drawRecord(recordImage, localTime, alpha) {
       const size = 520;
       const secondsPerRotation = config.record.secondsPerRotation || 16;
       const angle = localTime * (Math.PI * 2 / secondsPerRotation);
       ctx.save();
       ctx.globalAlpha = alpha;
-      ctx.translate(canvas.width / 2, canvas.height / 2);
+      ctx.translate(canvas.width / 2, canvas.height / 2 - 70);
       ctx.rotate(angle);
-      ctx.drawImage(image, -size / 2, -size / 2, size, size);
+      ctx.beginPath();
+      ctx.arc(0, 0, size / 2, 0, Math.PI * 2);
+      ctx.clip();
+      ctx.drawImage(recordImage, -size / 2, -size / 2, size, size);
       ctx.restore();
+    }
+
+    function getRecordComposite(recordImage, coverImage, size) {
+      const key = `${recordImage.src || "record"}|${coverImage.src}|${size}|label-replace`;
+      if (recordCompositeCache.has(key)) return recordCompositeCache.get(key);
+
+      const label = findYellowLabel(recordImage, size);
+      const seamBleed = Math.max(5, size * 0.005);
+      const output = document.createElement("canvas");
+      output.width = size;
+      output.height = size;
+      const outputCtx = output.getContext("2d");
+
+      outputCtx.clearRect(0, 0, size, size);
+      outputCtx.save();
+      outputCtx.beginPath();
+      outputCtx.arc(label.x, label.y, label.radius + seamBleed, 0, Math.PI * 2);
+      outputCtx.clip();
+      drawCoverInContext(
+        outputCtx,
+        coverImage,
+        label.x - label.radius - seamBleed,
+        label.y - label.radius - seamBleed,
+        (label.radius + seamBleed) * 2,
+        (label.radius + seamBleed) * 2
+      );
+      outputCtx.restore();
+
+      drawTemplateWithoutWhite(outputCtx, recordImage, size, label, seamBleed);
+
+      outputCtx.save();
+      outputCtx.beginPath();
+      outputCtx.arc(label.x, label.y, label.radius + seamBleed * 0.4, 0, Math.PI * 2);
+      outputCtx.strokeStyle = "rgba(4, 7, 6, 0.82)";
+      outputCtx.lineWidth = seamBleed * 1.8;
+      outputCtx.stroke();
+      outputCtx.restore();
+
+      recordCompositeCache.set(key, output);
+      return output;
+    }
+
+    function drawTemplateWithoutWhite(targetCtx, image, size, label, seamBleed) {
+      const template = document.createElement("canvas");
+      template.width = size;
+      template.height = size;
+      const templateCtx = template.getContext("2d");
+      templateCtx.drawImage(image, 0, 0, size, size);
+      const data = templateCtx.getImageData(0, 0, size, size);
+
+      for (let i = 0; i < data.data.length; i += 4) {
+        const pixel = i / 4;
+        const x = pixel % size;
+        const y = Math.floor(pixel / size);
+        const red = data.data[i];
+        const green = data.data[i + 1];
+        const blue = data.data[i + 2];
+        if (Math.hypot(x - label.x, y - label.y) <= label.radius + seamBleed) {
+          data.data[i + 3] = 0;
+          continue;
+        }
+        if (red > 238 && green > 238 && blue > 238) {
+          data.data[i + 3] = 0;
+        }
+        if (red > 130 && green > 75 && green < 205 && blue < 70 && red > green * 1.05) {
+          data.data[i + 3] = 0;
+        }
+      }
+
+      templateCtx.putImageData(data, 0, 0);
+      targetCtx.drawImage(template, 0, 0);
+    }
+
+    function findYellowLabel(image, size) {
+      const sample = document.createElement("canvas");
+      sample.width = size;
+      sample.height = size;
+      const sampleCtx = sample.getContext("2d");
+      sampleCtx.drawImage(image, 0, 0, size, size);
+      const data = sampleCtx.getImageData(0, 0, size, size).data;
+      let minX = size;
+      let minY = size;
+      let maxX = 0;
+      let maxY = 0;
+      let count = 0;
+
+      for (let y = 0; y < size; y += 2) {
+        for (let x = 0; x < size; x += 2) {
+          const index = (y * size + x) * 4;
+          const red = data[index];
+          const green = data[index + 1];
+          const blue = data[index + 2];
+          const isYellow = red > 130 && green > 75 && green < 205 && blue < 70 && red > green * 1.05;
+          if (!isYellow) continue;
+          minX = Math.min(minX, x);
+          minY = Math.min(minY, y);
+          maxX = Math.max(maxX, x);
+          maxY = Math.max(maxY, y);
+          count += 1;
+        }
+      }
+
+      if (!count) {
+        return {
+          x: size / 2,
+          y: size / 2,
+          radius: size * (config.record.coverRadiusRatio ?? 0.31)
+        };
+      }
+
+      return {
+        x: (minX + maxX) / 2,
+        y: (minY + maxY) / 2,
+        radius: Math.min(maxX - minX, maxY - minY) / 2
+      };
+    }
+
+    function drawCoverInContext(targetCtx, image, x, y, width, height) {
+      const scale = Math.max(width / image.width, height / image.height);
+      const w = image.width * scale;
+      const h = image.height * scale;
+      targetCtx.drawImage(image, x + (width - w) / 2, y + (height - h) / 2, w, h);
+    }
+
+    function repairCenterPatchFromSurroundings(targetCtx, size, patchRadius) {
+      const center = Math.floor(size / 2);
+      const sourceRadius = patchRadius * 3.4;
+      const image = targetCtx.getImageData(0, 0, size, size);
+      const source = new Uint8ClampedArray(image.data);
+      let avgR = 0;
+      let avgG = 0;
+      let avgB = 0;
+      let avgCount = 0;
+
+      for (let y = Math.floor(center - sourceRadius * 1.25); y <= Math.ceil(center + sourceRadius * 1.25); y += 1) {
+        for (let x = Math.floor(center - sourceRadius * 1.25); x <= Math.ceil(center + sourceRadius * 1.25); x += 1) {
+          const distance = Math.hypot(x - center, y - center);
+          if (distance < sourceRadius * 0.72 || distance > sourceRadius * 1.2) continue;
+          const index = (y * size + x) * 4;
+          const luminance = source[index] * 0.2126 + source[index + 1] * 0.7152 + source[index + 2] * 0.0722;
+          if (source[index + 3] < 16 || luminance < 70) continue;
+          avgR += source[index];
+          avgG += source[index + 1];
+          avgB += source[index + 2];
+          avgCount += 1;
+        }
+      }
+
+      const fillR = avgCount ? avgR / avgCount : 120;
+      const fillG = avgCount ? avgG / avgCount : 135;
+      const fillB = avgCount ? avgB / avgCount : 150;
+
+      for (let y = Math.floor(center - patchRadius); y <= Math.ceil(center + patchRadius); y += 1) {
+        for (let x = Math.floor(center - patchRadius); x <= Math.ceil(center + patchRadius); x += 1) {
+          const distance = Math.hypot(x - center, y - center);
+          if (distance > patchRadius) continue;
+
+          const targetIndex = (y * size + x) * 4;
+          const blend = distance > patchRadius * 0.72 ? (patchRadius - distance) / (patchRadius * 0.28) : 1;
+
+          image.data[targetIndex] = image.data[targetIndex] * (1 - blend) + fillR * blend;
+          image.data[targetIndex + 1] = image.data[targetIndex + 1] * (1 - blend) + fillG * blend;
+          image.data[targetIndex + 2] = image.data[targetIndex + 2] * (1 - blend) + fillB * blend;
+          image.data[targetIndex + 3] = 255;
+        }
+      }
+      targetCtx.putImageData(image, 0, 0);
     }
 
     function drawSceneText(scene, alpha, yOffset) {
       const x = 48;
-      const bottom = 1180;
+      const bottom = scene.type === "album" ? 1024 : 1180;
       ctx.save();
       ctx.globalAlpha = alpha;
       ctx.translate(0, yOffset);
@@ -524,8 +831,7 @@
         ctx.font = "600 19px Segoe UI, Arial, sans-serif";
         ctx.fillText(scene.number, x, bottom - 190);
         ctx.fillStyle = "rgba(244,248,252,0.94)";
-        ctx.font = "650 62px Segoe UI, Arial, sans-serif";
-        const afterTitle = drawWrappedText(scene.title, x, bottom - 128, 600, 64);
+        const afterTitle = drawFittedTitle(scene.title, x, bottom - 128, 640);
         ctx.fillStyle = "rgba(222,232,240,0.68)";
         ctx.font = "430 25px Segoe UI, Arial, sans-serif";
         drawWrappedText(scene.artist, x, afterTitle + 26, 600, 34);
@@ -574,7 +880,7 @@
           <label>Artist
             <input data-track="${index}" data-field="artist" type="text" value="${escapeAttr(track.artist)}">
           </label>
-          <label>Album image
+          <label>Finished record image
             <input data-track="${index}" data-field="image" type="file" accept="image/*">
           </label>
         </div>
@@ -622,6 +928,24 @@
       });
     }
 
+    function syncConfigFromForm() {
+      config.brand = brandInput.value;
+      config.issue = issueInput.value;
+      config.headline = headlineInput.value;
+      config.introSubtitle = introSubtitleInput.value;
+      config.outro.kicker = brandInput.value;
+      config.outro.title = outroTitleInput.value;
+      config.outro.subtitle = `${brandInput.value} ${issueInput.value}`;
+      config.outputName = outputNameInput.value.trim() || defaultConfig.outputName;
+      config.timing.intro = Number(introSecondsInput.value) || 2;
+      config.timing.album = Number(albumSecondsInput.value) || 10;
+      config.timing.outro = Number(outroSecondsInput.value) || 2;
+
+      document.querySelectorAll("[data-track][data-field='title'], [data-track][data-field='artist']").forEach((input) => {
+        config.tracks[Number(input.dataset.track)][input.dataset.field] = input.value;
+      });
+    }
+
     function escapeAttr(value) {
       return value.replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/</g, "&lt;");
     }
@@ -645,40 +969,92 @@
     }
 
     async function renderVideo() {
-      renderButton.disabled = true;
-      renderStatus.textContent = "Rendering... Keep this tab open.";
-      const mimeType = MediaRecorder.isTypeSupported("video/mp4;codecs=avc1.42E01E")
-        ? "video/mp4;codecs=avc1.42E01E"
-        : "video/webm;codecs=vp9";
-      const extension = mimeType.startsWith("video/mp4") ? "mp4" : "webm";
-      const stream = canvas.captureStream(30);
-      const recorder = new MediaRecorder(stream, { mimeType, videoBitsPerSecond: 3500000 });
+      syncConfigFromForm();
+      try {
+        await saveProjectConfig();
+        saveState();
+      } catch (error) {
+        console.warn("Could not save before showing render command.", error);
+      }
+      renderStatus.textContent = "Run in Git Bash: cd /e/sujeong/codex/midnight.frequency.archive_mobile && /c/Users/sujeong/.cache/codex-runtimes/codex-primary-runtime/dependencies/python/python.exe render.py";
+    }
+
+    async function renderWithFormat(format) {
+      renderStatus.textContent = `Rendering ${duration.toFixed(1)}s ${format.label}... Keep this tab open.`;
+      const stream = canvas.captureStream(0);
+      const videoTrack = stream.getVideoTracks()[0];
+      const options = {
+        videoBitsPerSecond: 4500000
+      };
+      if (format.mimeType) options.mimeType = format.mimeType;
+
+      let recorder;
+      try {
+        recorder = new MediaRecorder(stream, options);
+      } catch (error) {
+        stream.getTracks().forEach((track) => track.stop());
+        throw error;
+      }
+
       const chunks = [];
       recorder.ondataavailable = (event) => {
         if (event.data && event.data.size) chunks.push(event.data);
       };
 
-      await new Promise((resolve) => {
-        recorder.onstop = resolve;
-        recorder.start(1000);
+      await new Promise((resolve, reject) => {
+        recorder.onerror = () => reject(recorder.error || new Error("Recorder failed."));
+        recorder.onstop = () => {
+          stream.getTracks().forEach((track) => track.stop());
+          resolve();
+        };
+        recorder.start(500);
         const startedAt = performance.now();
+        const fps = 30;
+        const frameMs = 1000 / fps;
         async function next() {
-          const elapsed = (performance.now() - startedAt) / 1000;
-          await drawFrame(Math.min(elapsed, duration - 0.001));
-          if (elapsed < duration) requestAnimationFrame(next);
-          else recorder.stop();
+          try {
+            const elapsed = (performance.now() - startedAt) / 1000;
+            const renderTime = Math.min(elapsed, duration - 0.001);
+            await drawFrame(renderTime);
+            if (videoTrack?.requestFrame) videoTrack.requestFrame();
+            renderStatus.textContent = `Rendering ${Math.min(elapsed, duration).toFixed(1)} / ${duration.toFixed(1)}s ${format.label}...`;
+            if (elapsed < duration) {
+              setTimeout(next, frameMs);
+            } else {
+              if (videoTrack?.requestFrame) videoTrack.requestFrame();
+              if (recorder.state !== "inactive") recorder.stop();
+            }
+          } catch (error) {
+            stream.getTracks().forEach((track) => track.stop());
+            if (recorder.state !== "inactive") recorder.stop();
+            reject(error);
+          }
         }
         next();
       });
 
-      const blob = new Blob(chunks, { type: mimeType });
-      const link = document.createElement("a");
-      link.href = URL.createObjectURL(blob);
-      link.download = `${config.outputName || "midnight-frequency-archive"}.${extension}`;
-      link.click();
-      setTimeout(() => URL.revokeObjectURL(link.href), 2000);
-      renderStatus.textContent = `Done. Saved ${link.download}.`;
-      renderButton.disabled = false;
+      const blob = new Blob(chunks, { type: format.mimeType || recorder.mimeType || "video/webm" });
+      if (!blob.size) throw new Error("Rendered file is empty.");
+      return { blob, format };
+    }
+
+    function getSupportedVideoFormats() {
+      if (!window.MediaRecorder || !canvas.captureStream) return [];
+      const candidates = [
+        { mimeType: "video/webm;codecs=vp9", extension: "webm", label: "WebM" },
+        { mimeType: "video/webm;codecs=vp8", extension: "webm", label: "WebM" },
+        { mimeType: "video/webm", extension: "webm", label: "WebM" },
+        { mimeType: "", extension: "webm", label: "browser default video" },
+        { mimeType: "video/mp4;codecs=h264", extension: "mp4", label: "MP4" },
+        { mimeType: "video/mp4;codecs=avc1.42E01E", extension: "mp4", label: "MP4" },
+        { mimeType: "video/mp4", extension: "mp4", label: "MP4" }
+      ];
+      return candidates.filter((candidate) => !candidate.mimeType || MediaRecorder.isTypeSupported(candidate.mimeType));
+    }
+
+    async function preloadRenderAssets() {
+      await loadImage(config.background);
+      await Promise.all(config.tracks.map((track) => loadImage(track.image)));
     }
 
     function bindPreview() {
@@ -698,6 +1074,105 @@
       });
     }
 
+    function bindLpMaker() {
+      drawEmptyLpMaker();
+      lpCoverInput.addEventListener("change", async () => {
+        const file = lpCoverInput.files[0];
+        if (!file) return;
+
+        lpMakerStatus.textContent = "Creating record image...";
+        lpMakerOutputName = file.name.replace(/\.[^.]+$/, "") || "record-album";
+        try {
+          const coverUrl = await readFile(file);
+          const [record, cover] = await Promise.all([
+            loadImage(config.record.baseImage),
+            loadImage(coverUrl)
+          ]);
+          const recordImage = getRecordComposite(record, cover, lpMakerCanvas.width);
+          lpMakerCtx.clearRect(0, 0, lpMakerCanvas.width, lpMakerCanvas.height);
+          lpMakerCtx.drawImage(recordImage, 0, 0, lpMakerCanvas.width, lpMakerCanvas.height);
+          lpDownloadButton.disabled = false;
+          lpMakerStatus.textContent = "Record PNG is ready.";
+        } catch (error) {
+          lpDownloadButton.disabled = true;
+          lpMakerStatus.textContent = "Could not create record image. Try another image.";
+          console.error(error);
+        }
+      });
+
+      lpDownloadButton.addEventListener("click", () => {
+        const link = document.createElement("a");
+        link.href = lpMakerCanvas.toDataURL("image/png");
+        link.download = `${lpMakerOutputName}-record.png`;
+        link.click();
+      });
+    }
+
+    function createRecordBase(size) {
+      const record = document.createElement("canvas");
+      record.width = size;
+      record.height = size;
+      const recordCtx = record.getContext("2d");
+      const center = size / 2;
+      const radius = size * 0.49;
+
+      recordCtx.save();
+      recordCtx.translate(center, center);
+      recordCtx.beginPath();
+      recordCtx.arc(0, 0, radius, 0, Math.PI * 2);
+      recordCtx.clip();
+
+      const base = recordCtx.createRadialGradient(0, 0, radius * 0.12, 0, 0, radius);
+      base.addColorStop(0, "#202221");
+      base.addColorStop(0.42, "#0d0e0d");
+      base.addColorStop(0.7, "#2f302e");
+      base.addColorStop(1, "#090a0a");
+      recordCtx.fillStyle = base;
+      recordCtx.fillRect(-radius, -radius, radius * 2, radius * 2);
+
+      for (let i = 0; i < 10; i += 1) {
+        recordCtx.rotate(Math.PI / 5);
+        const shine = recordCtx.createLinearGradient(-radius, 0, radius, 0);
+        shine.addColorStop(0, "rgba(255,255,255,0)");
+        shine.addColorStop(0.48, "rgba(255,255,255,0.11)");
+        shine.addColorStop(0.54, "rgba(255,255,255,0)");
+        recordCtx.fillStyle = shine;
+        recordCtx.fillRect(-radius, -radius, radius * 2, radius * 2);
+      }
+
+      recordCtx.strokeStyle = "rgba(226,232,236,0.18)";
+      recordCtx.lineWidth = Math.max(1.2, size * 0.0013);
+      for (let r = radius * 0.35; r <= radius * 0.9; r += size * 0.011) {
+        recordCtx.beginPath();
+        recordCtx.arc(0, 0, r, 0, Math.PI * 2);
+        recordCtx.stroke();
+      }
+      for (let r = radius * 0.17; r <= radius * 0.32; r += size * 0.01) {
+        recordCtx.beginPath();
+        recordCtx.arc(0, 0, r, 0, Math.PI * 2);
+        recordCtx.stroke();
+      }
+
+      recordCtx.restore();
+      return record;
+    }
+
+    function drawEmptyLpMaker() {
+      lpMakerCtx.clearRect(0, 0, lpMakerCanvas.width, lpMakerCanvas.height);
+      lpMakerCtx.save();
+      lpMakerCtx.translate(lpMakerCanvas.width / 2, lpMakerCanvas.height / 2);
+      lpMakerCtx.beginPath();
+      lpMakerCtx.arc(0, 0, lpMakerCanvas.width * 0.42, 0, Math.PI * 2);
+      lpMakerCtx.strokeStyle = "rgba(188, 211, 232, 0.28)";
+      lpMakerCtx.lineWidth = 3;
+      lpMakerCtx.stroke();
+      lpMakerCtx.fillStyle = "rgba(220, 232, 242, 0.62)";
+      lpMakerCtx.font = "700 42px Segoe UI, Arial, sans-serif";
+      lpMakerCtx.textAlign = "center";
+      lpMakerCtx.fillText("UPLOAD COVER", 0, 14);
+      lpMakerCtx.restore();
+    }
+
     async function playLoop() {
       if (!playing) return;
       const elapsed = (performance.now() - playStarted) / 1000;
@@ -713,23 +1188,52 @@
       requestAnimationFrame(playLoop);
     }
 
-    saveButton.addEventListener("click", () => {
-      saveState();
-      renderStatus.textContent = "Saved edits on this browser.";
+    saveButton.addEventListener("click", async () => {
+      const originalText = saveButton.textContent;
+      saveButton.disabled = true;
+      saveButton.textContent = "Saving...";
+      try {
+        syncConfigFromForm();
+        rebuild();
+        await saveProjectConfig();
+        const browserSaved = saveState();
+        saveButton.textContent = "Saved";
+        renderStatus.textContent = browserSaved
+          ? "Saved edits to config.json. Git Bash render.py will use the latest edits."
+          : "Saved edits to config.json. Browser cache was skipped because uploaded images are large.";
+      } catch (error) {
+        console.error(error);
+        saveButton.textContent = "Save Failed";
+        renderStatus.textContent = `Save failed: ${error.message}. Open the app from the local server, not as a file.`;
+      } finally {
+        setTimeout(() => {
+          saveButton.disabled = false;
+          saveButton.textContent = originalText;
+        }, 1200);
+      }
     });
     resetButton.addEventListener("click", () => {
       config = clone(defaultConfig);
       imageCache.clear();
+      recordCompositeCache.clear();
       saveState();
       bindForm();
       rebuild();
     });
     renderButton.addEventListener("click", renderVideo);
 
-    bindTabs();
-    bindForm();
-    bindPreview();
-    rebuild();
+    async function initApp() {
+      config = await loadProjectConfig();
+      imageCache.clear();
+      recordCompositeCache.clear();
+      bindTabs();
+      bindForm();
+      bindPreview();
+      bindLpMaker();
+      rebuild();
+    }
+
+    initApp();
   </script>
 </body>
 </html>

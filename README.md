@@ -18,11 +18,15 @@ For a phone on the same Wi-Fi, replace `127.0.0.1` with your PC's local IP addre
 You can edit:
 
 - background image
-- album images 1-6
+- finished record images 1-6
 - brand, intro, outro, track titles, track artists
 - intro/album/outro timing
 
 The app stores edits in the current browser with `localStorage`.
+
+Use the `LP Maker` tab when you have a 1:1 square album cover. It creates a finished record PNG that you can download.
+
+Use the `Edit` tab's track image fields for finished record PNGs, not raw square covers.
 
 Render from the `Render` tab. Chrome usually exports MP4. If MP4 is unavailable, it exports WebM.
 
